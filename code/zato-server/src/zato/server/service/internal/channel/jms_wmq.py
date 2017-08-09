@@ -60,7 +60,7 @@ class Create(AdminService):
                 first()
 
             if existing_one:
-                raise Exception('A WebSphere MQ channel [{0}] already exists on this cluster'.format(input.name))
+                raise Exception('A WebSphere MQ channel `{}` already exists on this cluster'.format(input.name))
 
             # Is the service's name correct?
             service = session.query(Service).\
@@ -86,14 +86,16 @@ class Create(AdminService):
                 session.add(item)
                 session.commit()
 
-                if item.is_active:
-                    start_connector(self.server.repo_location, item.id, item.def_id)
+                input.action = CHANNEL.JMS_WMQ_CREATE.value
+                input.def_name = item.def_.name
+                input.service_name = service.name
+                self.broker_client.publish(input)
 
                 self.response.payload.id = item.id
                 self.response.payload.name = item.name
 
             except Exception, e:
-                msg = 'Could not create a WebSphere MQ channel, e:[{e}]'.format(e=format_exc(e))
+                msg = 'Could not create a WebSphere MQ channel, e:`{}`'.format(e=format_exc(e))
                 self.logger.error(msg)
                 session.rollback()
 
@@ -123,7 +125,7 @@ class Edit(AdminService):
                 first()
 
             if existing_one:
-                raise Exception('A JMS WebSphere MQ channel [{0}] already exists on this cluster'.format(input.name))
+                raise Exception('A JMS WebSphere MQ channel `{}` already exists on this cluster'.format(input.name))
 
             # Is the service's name correct?
             service = session.query(Service).\
@@ -149,16 +151,16 @@ class Edit(AdminService):
                 session.commit()
 
                 input.action = CHANNEL.JMS_WMQ_EDIT.value
+                input.def_name = item.def_.name
                 input.old_name = old_name
-                input.service = service.impl_name
-                self.broker_client.publish(input, msg_type=MESSAGE_TYPE.TO_JMS_WMQ_CONSUMING_CONNECTOR_ALL)
+                input.service_name = service.name
+                self.broker_client.publish(input)
 
                 self.response.payload.id = item.id
                 self.response.payload.name = item.name
 
             except Exception, e:
-                msg = 'Could not update the JMS WebSphere MQ definition, e:[{e}]'.format(e=format_exc(e))
-                self.logger.error(msg)
+                self.logger.error('Could not update the JMS WebSphere MQ definition, e:`%s`', format_exc(e))
                 session.rollback()
 
                 raise
@@ -181,12 +183,15 @@ class Delete(AdminService):
                 session.delete(def_)
                 session.commit()
 
-                msg = {'action': CHANNEL.JMS_WMQ_DELETE.value, 'name': def_.name, 'id':def_.id}
-                self.broker_client.publish(msg, MESSAGE_TYPE.TO_JMS_WMQ_CONSUMING_CONNECTOR_ALL)
+                self.broker_client.publish({
+                    'action': CHANNEL.JMS_WMQ_DELETE.value,
+                    'name': item.name,
+                    'id':item_id,
+                    'def_name':def_name,
+                })
 
             except Exception, e:
                 session.rollback()
-                msg = 'Could not delete the JMS WebSphere MQ channel, e:[{e}]'.format(e=format_exc(e))
-                self.logger.error(msg)
+                self.logger.error('Could not delete the JMS WebSphere MQ channel, e:`%s`', format_exc(e))
 
                 raise

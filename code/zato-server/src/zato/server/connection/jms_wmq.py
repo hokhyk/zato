@@ -15,6 +15,9 @@ from logging import getLogger
 from socket import error as socket_error
 from traceback import format_exc
 
+import greenify
+greenify.greenify()
+
 # amqp
 from amqp.exceptions import ConnectionError as AMQPConnectionError
 
@@ -22,18 +25,48 @@ from amqp.exceptions import ConnectionError as AMQPConnectionError
 from gevent import sleep, spawn
 
 # Spring Python
-from springpython.jms import JMSException
+from springpython.jms import JMSException, NoMessageAvailableException, WebSphereMQJMSException
 from springpython.jms.core import JmsTemplate, TextMessage
 from springpython.jms.factory import WebSphereMQConnectionFactory
 
+# ThreadPool
+from threadpool import ThreadPool, WorkRequest, NoResultsPending
+
 # Zato
 from zato.common import CHANNEL, SECRET_SHADOW, version
-from zato.common.util import get_component_name
+from zato.common.util import get_component_name, spawn_greenlet
 from zato.server.connection.connector import Connector, Inactive
 
 # ################################################################################################################################
 
 logger = getLogger(__name__)
+
+# ################################################################################################################################
+
+def get_factory(config):
+    return WebSphereMQConnectionFactory(
+        config.queue_manager, str(config.channel), str(config.host), str(config.port),
+        config.cache_open_send_queues,
+        config.cache_open_receive_queues, config.use_shared_connections,
+        ssl=config.ssl, ssl_cipher_spec=str(config.ssl_cipher_spec) if config.get('ssl_cipher_spec') else None,
+        ssl_key_repository=str(config.ssl_key_repository) if config.get('ssl_key_repository') else None,
+        needs_mcd=config.needs_mcd,
+    )
+
+# ################################################################################################################################
+
+def ping_factory(factory, pymqi):
+
+    qmgr = pymqi.QueueManager(None)
+    qmgr.connect_tcp_client(str(factory.queue_manager), pymqi.CD(), str(factory.channel),
+        b'{}({})'.format(factory.host, factory.listener_port), user=None, password=None)
+
+    pcf = pymqi.PCFExecute(qmgr)
+
+    try:
+        pcf.MQCMD_PING_Q_MGR()
+    finally:
+        qmgr.disconnect()
 
 # ################################################################################################################################
 
@@ -54,7 +87,7 @@ class _WMQProducers(object):
         # type: (dict)
         self.config = config
         self.name = self.config.name
-        self.jms_template = JmsTemplate(self.config.factory)
+        self.jms_template = JmsTemplate(get_factory(self.config.def_config))
 
     def publish(self, body, queue_name, *args, **kwargs):
 
@@ -72,34 +105,61 @@ class _WMQProducers(object):
         msg.jms_timestamp = kwargs.get('timestamp')
         msg.max_chars_printed = kwargs.get('max_chars_printed') or 100
 
-        return self.jms_template.send(msg, queue_name)
+        spawn(self.jms_template.send, msg, queue_name)
+
+# ################################################################################################################################
+
+class _WMQConsumer(object):
+    def __init__(self, config, queue, pymqi):
+        # type: (WebSphereMQConnectionFactory, str, object)
+        self.factory = get_factory(config)
+        self.queue = queue
+        self.pymqi = pymqi
+
+    def ping(self):
+        """ Ping the factory's underlying queue manager. This only confirms that the QM is available when ping was issued,
+        it's still possible that it will disconnect afterwards but we have at least some indication whether it is up now.
+        """
+        ping_factory(self.factory, self.pymqi)
+
+    def consume(self):
+        try:
+            msg = self.factory.receive(self.queue, 0.5)
+        except NoMessageAvailableException:
+            pass
+        except WebSphereMQJMSException, e:
+            self.logger.error("%s in .receive, e.completion_code:`%s`, "
+                "e.reason_code:`%s`" % (e.__class__.__name__, e.completion_code, e.reason_code))
+            raise
+        else:
+            return msg
 
 # ################################################################################################################################
 
 class Consumer(object):
     """ Consumes messages from WebSphere MQ queues. There is one Consumer object for each Zato WebSphere MQ channel.
     """
-    def __init__(self, config, on_amqp_message):
-        # type: (dict, Callable)
+    def __init__(self, config, conn, on_wmq_message):
+        # type: (dict, WebSphereMQConnectionFactory, Callable)
         self.config = config
         self.name = self.config.name
-        self.queue = [Queue(self.config.queue)]
-        self.on_amqp_message = on_amqp_message
+        self.conn = conn
+        self.on_wmq_message = on_wmq_message
         self.keep_running = True
         self.is_stopped = False
         self.is_connected = False # Instance-level flag indicating whether we have an active connection now.
-        self.timeout = 0.35
+        self.timeout = 0.5
 
-    def _on_amqp_message(self, body, msg):
+    def _on_wmq_message(self, msg):
         try:
-            return self.on_amqp_message(body, msg, self.name, self.config)
+            return self.on_wmq_message(msg, self.name, self.config)
         except Exception, e:
             logger.warn(format_exc(e))
 
 # ################################################################################################################################
 
     def _get_consumer(self, _gevent_sleep=sleep):
-        """ Creates a new connection and consumer to an WebSphere MQ broker.
+        """ Creates a new connection and consumer to a WebSphere MQ queue manager.
         """
 
         # We cannot assume that we will obtain the consumer right-away. For instance, the remote end
@@ -113,16 +173,19 @@ class Consumer(object):
                 break
 
             try:
-                conn = self.config.conn_class(self.config.conn_url)
-                consumer = _Consumer(conn, queues=self.queue, callbacks=[self._on_amqp_message],
-                    no_ack=_no_ack[self.config.ack_mode], tag_prefix='{}/{}'.format(
-                        self.config.consumer_tag_prefix, get_component_name('amqp-consumer')))
-                consumer.consume()
+                consumer = _WMQConsumer(self.config.def_config, self.config.queue, self.config.pymqi)
+                try:
+                    consumer.ping()
+                except Exception, e:
+                    logger.warn(format_exc(e))
+                    consumer = None
+                    raise
+
             except Exception, e:
                 err_conn_attempts += 1
                 noun = 'attempts' if err_conn_attempts > 1 else 'attempt'
-                logger.info('Could not create an WebSphere MQ consumer for channel `%s` (%s %s so far), e:`%s`',
-                    self.name, err_conn_attempts, noun, format_exc(e))
+                logger.info('Could not create a WebSphere MQ consumer for channel `%s` (%s) (%s %s so far), e:`%s`',
+                    self.name, self.config.conn_url, err_conn_attempts, noun, format_exc(e))
 
                 # It's fine to sleep for a longer time because if this exception happens it means that we cannot connect
                 # to the server at all, which will likely mean that it is down,
@@ -131,13 +194,13 @@ class Consumer(object):
 
         if err_conn_attempts > 0:
             noun = 'attempts' if err_conn_attempts > 1 else 'attempt'
-            logger.info('Created an WebSphere MQ consumer for channel `%s` after %s %s', self.name, err_conn_attempts, noun)
+            logger.info('Created a WebSphere MQ consumer for channel `%s` after %s %s', self.name, err_conn_attempts, noun)
 
         return consumer
 
 # ################################################################################################################################
 
-    def start(self, conn_errors=(socket_error, IOError, OSError), _gevent_sleep=sleep):
+    def start(self, conn_errors=(socket_error, IOError, OSError), _spawn=spawn, _gevent_sleep=sleep):
         """ Runs the WebSphere MQ consumer's mainloop.
         """
         try:
@@ -149,59 +212,17 @@ class Consumer(object):
             # Local aliases.
             timeout = self.timeout
 
-            # Since heartbeats run frequently (self.timeout may be a fraction of a second), we don't want to log each
-            # and every error. Instead we log errors each log_every times.
-            hb_errors_so_far = 0
-            log_every = 20
-
             while self.keep_running:
                 try:
+                    msg = consumer.consume()
 
-                    connection = consumer.connection
-
-                    # Do not assume the consumer still has the connection, it may have been already closed, we don't know.
-                    # Unfortunately, the only way to check it is to invoke the method and catch AttributeError
-                    # if connection is already None.
-                    try:
-                        connection.drain_events(timeout=timeout)
-                    except AttributeError:
-                        consumer = self._get_consumer()
-
-                # Special-case AMQP-level connection errors and recreate the connection if any is caught.
-                except AMQPConnectionError, e:
-                    logger.warn('Caught WebSphere MQ connection error in mainloop e:`%s`', format_exc(e))
-                    if connection:
-                        connection.close()
-                        consumer = self._get_consumer()
-
-                # Regular network-level errors - assume the WebSphere MQ connection is still fine and treat it
-                # as an opportunity to perform the heartbeat.
-                except conn_errors, e:
-
-                    try:
-                        connection.heartbeat_check()
-                    except Exception, e:
-                        hb_errors_so_far += 1
-                        if hb_errors_so_far % log_every == 0:
-                            logger.warn('Exception in heartbeat (%s so far), e:`%s`', hb_errors_so_far, format_exc(e))
-
-                        # Ok, we've lost the connection, set the flag to False and sleep for some time then.
-                        if not connection:
-                            self.is_connected = False
-
-                        if self.keep_running:
-                            _gevent_sleep(timeout)
+                    if msg:
+                        _spawn(self._on_wmq_message, msg)
                     else:
-                        # Reset heartbeat errors counter since we have apparently succeeded.
-                        hb_errors_so_far = 0
+                        _gevent_sleep(timeout) # To give other greenlets an opportunity to run at all
 
-                        # If there was not any exception but we did not have a previous connection it means that a previously
-                        # established connection was broken so we need to recreate it.
-                        # But, we do it only if we are still told to keep running.
-                        if self.keep_running:
-                            if not self.is_connected:
-                                consumer = self._get_consumer()
-                                self.is_connected = True
+                except Exception, e:
+                    logger.warn(format_exc(e))
 
             if connection:
                 logger.info('Closing connection for `%s`', consumer)
@@ -221,8 +242,6 @@ class Consumer(object):
         # Wait until actually stopped.
         if not self.is_stopped:
 
-            # self.timeout is multiplied by 2 because it's used twice in the main loop in self.start
-            # plus a bit of additional time is added.
             now = datetime.utcnow()
             delta = (self.timeout * 2) + 0.2
             until = now + timedelta(seconds=delta)
@@ -254,19 +273,9 @@ class ConnectorJMSWMQ(Connector):
         self._producers = {}
         self.config.conn_url = self._get_conn_string()
 
-        self.conn = WebSphereMQConnectionFactory(
-            self.config.queue_manager,
-            str(self.config.channel),
-            str(self.config.host),
-            str(self.config.port),
-            self.config.cache_open_send_queues,
-            self.config.cache_open_receive_queues,
-            self.config.use_shared_connections,
-            ssl = self.config.ssl,
-            ssl_cipher_spec = str(self.config.ssl_cipher_spec) if self.config.get('ssl_cipher_spec') else None,
-            ssl_key_repository = str(self.config.ssl_key_repository) if self.config.get('ssl_key_repository') else None,
-            needs_mcd = self.config.needs_mcd,
-        )
+        # Imported here because it's an optional dependency that requires linking against a proprietary library.
+        import pymqi
+        self.pymqi = pymqi
 
         self.is_connected = True
 
@@ -278,24 +287,18 @@ class ConnectorJMSWMQ(Connector):
 
 # ################################################################################################################################
 
-    def on_amqp_message(self, body, msg, channel_name, channel_config, _WMQMessage=_WMQMessage, _RECEIVED='RECEIVED'):
+    def on_wmq_message(self, msg, channel_name, channel_config, _CHANNEL_JMS_WMQ=CHANNEL.JMS_WMQ):
         """ Invoked each time a message is taken off an WebSphere MQ queue.
         """
         self.on_message_callback(
-            channel_config['service_name'], body, channel=_CHANNEL_AMQP,
+            channel_config['service_name'], msg.text, channel=_CHANNEL_JMS_WMQ,
             data_format=channel_config['data_format'],
             zato_ctx={'zato.channel_item': {
                 'id': channel_config.id,
                 'name': channel_config.name,
                 'is_internal': False,
-                'amqp_msg': msg,
+                'wmq_msg': msg,
             }})
-
-        if msg._state == _RECEIVED:
-            if channel_config['ack_mode'] == _ZATO_ACK_MODE_ACK:
-                msg.ack()
-            else:
-                msg.reject()
 
 # ################################################################################################################################
 
@@ -312,6 +315,9 @@ class ConnectorJMSWMQ(Connector):
 
     def _enrich_channel_config(self, config):
         config.conn_url = self.config.conn_url
+        config.def_config = self.config
+        config.pymqi = self.pymqi
+        config.queue = str(config.queue) # It could be unicode but PyMQI requires strings
 
 # ################################################################################################################################
 
@@ -322,8 +328,8 @@ class ConnectorJMSWMQ(Connector):
             self._enrich_channel_config(config)
 
             # TODO: Make the pool size configurable from web-admin
-            for x in xrange(30):
-                spawn(self._create_consumer, config)
+            for x in xrange(1):
+                spawn_greenlet(self._create_consumer, config)
 
 # ################################################################################################################################
 
@@ -339,9 +345,9 @@ class ConnectorJMSWMQ(Connector):
 
     def _create_consumer(self, config):
         # type: (str)
-        """ Creates an WebSphere MQ consumer for a specific queue and starts it.
+        """ Creates a WebSphere MQ consumer for a specific queue and starts it.
         """
-        consumer = Consumer(config, self.on_amqp_message)
+        consumer = Consumer(config, self.conn, self.on_wmq_message)
         self._consumers.setdefault(config.name, []).append(consumer)
         consumer.start()
 
@@ -382,7 +388,7 @@ class ConnectorJMSWMQ(Connector):
         self.channels[config.name] = config
         self._enrich_channel_config(config)
 
-        for x in xrange(config.pool_size):
+        for x in xrange(1):
             spawn(self._create_consumer, config)
 
 # ################################################################################################################################
