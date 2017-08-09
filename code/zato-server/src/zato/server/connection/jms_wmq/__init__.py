@@ -70,6 +70,11 @@ def ping_factory(factory, pymqi):
 
 # ################################################################################################################################
 
+class SubprocessInfo(object):
+    pass
+
+# ################################################################################################################################
+
 class _WMQMessage(object):
     __slots__ = ('body', 'impl')
 
@@ -79,35 +84,6 @@ class _WMQMessage(object):
 
 # ################################################################################################################################
 
-class _WMQProducers(object):
-    """ Encapsulates information about producers used by outgoing WebSphere MQ connection to send messages to a broker.
-    Each outgoing connection has one _WMQroducers object assigned.
-    """
-    def __init__(self, config):
-        # type: (dict)
-        self.config = config
-        self.name = self.config.name
-        self.jms_template = JmsTemplate(get_factory(self.config.def_config))
-
-    def publish(self, body, queue_name, *args, **kwargs):
-
-        msg = TextMessage(body)
-
-        msg.jms_destination = queue_name
-        msg.jms_expiration = kwargs.get('priority') or self.config.expiration
-        msg.jms_correlation_id = kwargs.get('correlation_id')
-        msg.jms_delivery_mode = kwargs.get('delivery_mode') or self.config.delivery_mode
-        msg.jms_expiration = kwargs.get('expiration') or self.config.expiration or None
-        msg.jms_message_id = kwargs.get('message_id')
-        msg.jms_priority = kwargs.get('priority') or self.config.priority
-        msg.jms_redelivered = kwargs.get('redelivered')
-        msg.jms_reply_to = kwargs.get('reply_to')
-        msg.jms_timestamp = kwargs.get('timestamp')
-        msg.max_chars_printed = kwargs.get('max_chars_printed') or 100
-
-        spawn(self.jms_template.send, msg, queue_name)
-
-# ################################################################################################################################
 
 class _WMQConsumer(object):
     def __init__(self, config, queue, pymqi):

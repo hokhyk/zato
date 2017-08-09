@@ -21,7 +21,7 @@ from zato.common.ipc import IPCBase
 # ################################################################################################################################
 
 class Forwarder(IPCBase):
-    """ An IPC broker forwarding requests across pub/sub processes. Required to achieve an i
+    """ An IPC broker forwarding requests across pub/sub processes.
     """
     def __init__(self, base_address, pid):
         self.base_address = self.get_address(base_address)

@@ -80,7 +80,7 @@ class IPCAPI(object):
         """
 
         # Create a FIFO pipe to receive replies to come through
-        fifo_path = os.path.join(tempfile.tempdir, 'zato-ipc-fifo-{}'.format(uuid4().hex))
+        fifo_path = os.path.join(tempfile.gettempdir(), 'zato-ipc-fifo-{}'.format(uuid4().hex))
         os.mkfifo(fifo_path, fifo_create_mode)
 
         try:
