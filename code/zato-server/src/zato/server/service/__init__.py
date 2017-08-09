@@ -37,7 +37,6 @@ from zato.common.nav import DictNav, ListNav
 from zato.common.util import get_response_value, new_cid, payload_from_request, service_name_from_impl, uncamelify
 from zato.server.connection import slow_response
 from zato.server.connection.email import EMailAPI
-from zato.server.connection.jms_wmq.outgoing import WMQFacade
 from zato.server.connection.search import SearchAPI
 from zato.server.connection.zmq_.outgoing import ZMQFacade
 from zato.server.message import MessageFacade
@@ -152,6 +151,14 @@ class AMQPFacade(object):
 
 # ################################################################################################################################
 
+class WMQFacade(object):
+    """ Introduced solely to let service access outgoing connections through self.out.jms_wmq.invoke/_async
+    rather than self.out.jms_wmq_invoke/_async. The .send method is kept for pre-3.0 backward-compatibility.
+    """
+    __slots__ = ('send', 'invoke', 'invoke_async')
+
+# ################################################################################################################################
+
 class PatternsFacade(object):
     """ The API through which services make use of integration patterns.
     """
@@ -184,6 +191,8 @@ class Service(object):
     email = None
     search = None
     amqp = AMQPFacade()
+    wmq = WMQFacade()
+    jms_wmq = wmq
 
     _worker_store = None
     _worker_config = None
@@ -239,7 +248,7 @@ class Service(object):
         self.out = self.outgoing = _Outgoing(
             self.amqp,
             self._out_ftp,
-            _WMQFacade(self.broker_client) if self.component_enabled_websphere_mq else None,
+            self.wmq,
             self._worker_config.out_odoo,
             self._out_plain_http,
             self._worker_config.out_soap,

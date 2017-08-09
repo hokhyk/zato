@@ -40,6 +40,7 @@ class connector_type:
     class duplex:
         amqp = 'AMQP'
         web_socket = 'WebSocket'
+        wmq = 'WebSphere MQ'
         zmq_v01 = 'ZeroMQ MDP v0.1'
 
 class Inactive(Exception):
@@ -144,6 +145,7 @@ class Connector(object):
                         if attempts % log_each == 0:
                             logger.warn('Could not connect to %s (%s) after %s attempts, time spent so far: %s (id:%s)',
                                 self.get_log_details(), self.name, attempts, datetime.utcnow() - start, self.id_self)
+                        sleep(2)
 
                 # Ok, break from the outermost loop
                 self.keep_connecting = False

@@ -102,6 +102,9 @@ class ConfigLoader(object):
         query = self.odb.get_definition_amqp_list(server.cluster.id, True)
         self.config.definition_amqp = ConfigDict.from_query('definition_amqp', query)
 
+        query = self.odb.get_definition_jms_wmq_list(server.cluster.id, True)
+        self.config.definition_jms_wmq = ConfigDict.from_query('definition_jms_wmq', query)
+
         #
         # Definitions - end
         #
@@ -117,6 +120,10 @@ class ConfigLoader(object):
         # STOMP
         query = self.odb.get_channel_stomp_list(server.cluster.id, True)
         self.config.channel_stomp = ConfigDict.from_query('channel_stomp', query)
+
+        # JMS WMQ
+        query = self.odb.get_channel_jms_wmq_list(server.cluster.id, True)
+        self.config.channel_jms_wmq = ConfigDict.from_query('channel_jms_wmq', query)
 
         #
         # Channels - end

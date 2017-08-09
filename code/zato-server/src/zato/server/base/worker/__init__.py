@@ -50,6 +50,7 @@ from zato.common.util import get_tls_ca_cert_full_path, get_tls_key_cert_full_pa
      store_tls, update_apikey_username, update_bind_port, visit_py_source
 from zato.server.base.worker.common import WorkerImpl
 from zato.server.connection.amqp_ import ConnectorAMQP
+from zato.server.connection.jms_wmq import ConnectorJMSWMQ
 from zato.server.connection.cassandra import CassandraAPI, CassandraConnStore
 from zato.server.connection.connector import ConnectorStore, connector_type
 from zato.server.connection.cloud.aws.s3 import S3Wrapper
@@ -182,7 +183,11 @@ class WorkerStore(_WorkerStoreBase, BrokerMessageReceiver):
 
         # AMQP
         self.amqp_api = ConnectorStore(connector_type.duplex.amqp, ConnectorAMQP)
-        self.amqp_out_name_to_def = {} # Maps outgoing connection names to definition names, i.e. to connector names        
+        self.amqp_out_name_to_def = {} # Maps outgoing connection names to definition names, i.e. to connector names
+
+        # WebSphere MQ
+        self.jms_wmq_api = ConnectorStore(connector_type.duplex.wmq, ConnectorJMSWMQ)
+        self.jms_wmq_out_name_to_def = {} # Maps outgoing connection names to definition names, i.e. to connector names
 
         # Vault connections
         self.vault_conn_api = VaultConnAPI()
@@ -260,6 +265,9 @@ class WorkerStore(_WorkerStoreBase, BrokerMessageReceiver):
 
         # AMQP
         self.init_amqp()
+
+        # WebSphere MQ
+        self.init_jms_wmq()
 
         # All set, whoever is waiting for us, if anyone at all, can now proceed
         self.is_ready = True
@@ -663,6 +671,30 @@ class WorkerStore(_WorkerStoreBase, BrokerMessageReceiver):
                 channels=self._config_to_dict(channels), outconns=self._config_to_dict(outconns))
 
         self.amqp_api.start()
+
+# ################################################################################################################################
+
+    def init_jms_wmq(self):
+        """ Initializes all WebSphere MQ connections.
+        """
+        def _name_matches(def_name):
+            def _inner(config):
+                return config['def_name']==def_name
+            return _inner
+
+        for def_name, data in self.worker_config.definition_jms_wmq.items():
+
+            channels = self.worker_config.channel_jms_wmq.get_config_list(_name_matches(def_name))
+            outconns = self.worker_config.out_jms_wmq.get_config_list(_name_matches(def_name))
+            for outconn in outconns:
+                self.jms_wmq_out_name_to_def[outconn['name']] = def_name
+
+            # AMQP definitions as such are always active. It's channels or outconns that can be inactive.
+            data.config.is_active = True
+            self.jms_wmq_api.create(def_name, bunchify(data.config), self.invoke,
+                channels=self._config_to_dict(channels), outconns=self._config_to_dict(outconns))
+
+        self.jms_wmq_api.start()
 
 # ################################################################################################################################
 
@@ -1336,9 +1368,6 @@ class WorkerStore(_WorkerStoreBase, BrokerMessageReceiver):
 
     def on_broker_msg_SCHEDULER_JOB_EXECUTED(self, msg, args=None):
         return self.on_message_invoke_service(msg, CHANNEL.SCHEDULER, 'SCHEDULER_JOB_EXECUTED', args)
-
-    def on_broker_msg_CHANNEL_JMS_WMQ_MESSAGE_RECEIVED(self, msg, args=None):
-        return self.on_message_invoke_service(msg, CHANNEL.JMS_WMQ, 'CHANNEL_JMS_WMQ_MESSAGE_RECEIVED', args)
 
     def on_broker_msg_CHANNEL_ZMQ_MESSAGE_RECEIVED(self, msg, args=None):
         return self.on_message_invoke_service(msg, CHANNEL.ZMQ, 'CHANNEL_ZMQ_MESSAGE_RECEIVED', args)

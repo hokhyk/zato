@@ -379,7 +379,7 @@ def definition_amqp_list(session, cluster_id, needs_columns=False):
 
 # ################################################################################################################################
 
-def _def_jms_wmq(session, cluster_id):
+def _definition_jms_wmq(session, cluster_id):
     return session.query(
         ConnDefWMQ.id, ConnDefWMQ.name, ConnDefWMQ.host,
         ConnDefWMQ.port, ConnDefWMQ.queue_manager, ConnDefWMQ.channel,
@@ -390,18 +390,18 @@ def _def_jms_wmq(session, cluster_id):
         filter(Cluster.id==cluster_id).\
         order_by(ConnDefWMQ.name)
 
-def def_jms_wmq(session, cluster_id, id):
+def definition_jms_wmq(session, cluster_id, id):
     """ A particular JMS WebSphere MQ definition
     """
-    return _def_jms_wmq(session, cluster_id).\
+    return _definition_jms_wmq(session, cluster_id).\
         filter(ConnDefWMQ.id==id).\
         one()
 
 @query_wrapper
-def def_jms_wmq_list(session, cluster_id, needs_columns=False):
+def definition_jms_wmq_list(session, cluster_id, needs_columns=False):
     """ JMS WebSphere MQ connection definitions.
     """
-    return _def_jms_wmq(session, cluster_id)
+    return _definition_jms_wmq(session, cluster_id)
 
 # ################################################################################################################################
 

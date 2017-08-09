@@ -84,8 +84,14 @@ def set_up_class_attributes(class_, service_store=None, name=None):
         class_.cloud.aws.s3 = service_store.server.worker_store.worker_config.cloud_aws_s3
         class_._out_ftp = service_store.server.worker_store.worker_config.out_ftp
         class_._out_plain_http = service_store.server.worker_store.worker_config.out_plain_http
-        class_.amqp.invoke = class_.amqp.send = service_store.server.worker_store.amqp_invoke # .send is for pre-3.0 backward compat
+
+        # amqp.send is for pre-3.0 backward compat
+        class_.amqp.invoke = class_.amqp.send = service_store.server.worker_store.amqp_invoke
         class_.amqp.invoke_async = class_.amqp.send = service_store.server.worker_store.amqp_invoke_async
+
+        # jms_wmq.send is for pre-3.0 backward compat
+        class_.jms_wmq.invoke = class_.jms_wmq.send = service_store.server.worker_store.jms_wmq_invoke
+        class_.jms_wmq.invoke_async = class_.jms_wmq.send = service_store.server.worker_store.jms_wmq_invoke_async
 
         class_._worker_store = service_store.server.worker_store
         class_._worker_config = service_store.server.worker_store.worker_config

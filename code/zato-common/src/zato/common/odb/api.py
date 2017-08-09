@@ -945,17 +945,17 @@ class ODBManager(SessionWrapper):
 
 # ################################################################################################################################
 
-    def get_def_jms_wmq(self, cluster_id, def_id):
+    def get_definition_jms_wmq(self, cluster_id, def_id):
         """ Returns an JMS WebSphere MQ definition's details.
         """
         with closing(self.session()) as session:
-            return query.def_jms_wmq(session, cluster_id, def_id)
+            return query.definition_jms_wmq(session, cluster_id, def_id)
 
-    def get_def_jms_wmq_list(self, cluster_id, needs_columns=False):
+    def get_definition_jms_wmq_list(self, cluster_id, needs_columns=False):
         """ Returns a list of JMS WebSphere MQ definitions on the given cluster.
         """
         with closing(self.session()) as session:
-            return query.def_jms_wmq_list(session, cluster_id, needs_columns)
+            return query.definition_jms_wmq_list(session, cluster_id, needs_columns)
 
     def get_out_jms_wmq(self, cluster_id, out_id):
         """ Returns an outgoing JMS WebSphere MQ connection's details.
