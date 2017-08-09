@@ -13,9 +13,9 @@ import logging
 from functools import wraps
 
 # SQLAlchemy
-from sqlalchemy import func, not_
+from sqlalchemy import func, Integer, not_
 from sqlalchemy.orm import aliased
-from sqlalchemy.sql.expression import case
+from sqlalchemy.sql.expression import case, cast
 
 # Zato
 from zato.common import DEFAULT_HTTP_PING_METHOD, DEFAULT_HTTP_POOL_SIZE, HTTP_SOAP_SERIALIZATION_TYPE, PARAMS_PRIORITY, \
@@ -435,7 +435,8 @@ def out_amqp_list(session, cluster_id, needs_columns=False):
 def _out_jms_wmq(session, cluster_id):
     return session.query(
         OutgoingWMQ.id, OutgoingWMQ.name, OutgoingWMQ.is_active,
-        OutgoingWMQ.delivery_mode, OutgoingWMQ.priority, OutgoingWMQ.expiration,
+        OutgoingWMQ.delivery_mode, OutgoingWMQ.priority,
+        cast(OutgoingWMQ.expiration, Integer).label('expiration'),
         ConnDefWMQ.name.label('def_name'), OutgoingWMQ.def_id).\
         filter(OutgoingWMQ.def_id==ConnDefWMQ.id).\
         filter(ConnDefWMQ.id==OutgoingWMQ.def_id).\

@@ -32,7 +32,13 @@ class GetList(AdminService):
         output_optional = ('expiration',)
 
     def get_data(self, session):
-        return self._search(out_jms_wmq_list, session, self.request.input.cluster_id, False)
+        response = self._search(out_jms_wmq_list, session, self.request.input.cluster_id, False)
+
+        for item in response:
+            if not item.expiration:
+                item.expiration = ''
+
+        return response
 
     def handle(self):
         with closing(self.odb.session()) as session:
