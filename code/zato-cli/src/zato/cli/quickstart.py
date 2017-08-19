@@ -86,12 +86,12 @@ echo [3/$STEPS] Load-balancer started
 # .. scheduler ..
 cd $BASE_DIR/scheduler
 $ZATO_BIN start .
-echo [5/$STEPS] Scheduler started
+echo [6/$STEPS] Scheduler started
 
 # .. connectors ..
 cd $BASE_DIR/connector-wmq
 $ZATO_BIN start .
-echo [6/$STEPS] Connectors started
+echo [7/$STEPS] Connectors started
 
 """
 
@@ -150,15 +150,15 @@ echo [1/$STEPS] Load-balancer stopped
 
 cd $BASE_DIR/web-admin
 $ZATO_BIN stop .
-echo [$STEPS/$STEPS] Web admin stopped
+echo [4/$STEPS] Web admin stopped
 
 cd $BASE_DIR/scheduler
 $ZATO_BIN stop .
-echo [$STEPS/$STEPS] Scheduler stopped
+echo [5/$STEPS] Scheduler stopped
 
 cd $BASE_DIR/connector-wmq
 $ZATO_BIN stop .
-echo [$STEPS/$STEPS] Connectors stopped
+echo [6/$STEPS] Connectors stopped
 
 cd $BASE_DIR
 echo Zato cluster $CLUSTER stopped
@@ -484,8 +484,8 @@ class Create(ZatoCommand):
         sanity_checks = '\n'.join(sanity_checks)
         start_servers = '\n'.join(start_servers)
         stop_servers = '\n'.join(stop_servers)
-        start_steps = 5 + servers
-        stop_steps = 3 + servers
+        start_steps = 6 + servers
+        stop_steps = 4 + servers
 
         zato_qs_start_head = zato_qs_start_head_template.format(
             zato_bin=zato_bin, script_dir=script_dir, cluster_name=cluster_name, start_steps=start_steps)
