@@ -1,18 +1,12 @@
 # -*- coding: utf-8 -*-
 
 """
-Copyright (C) 2016 Dariusz Suchojad <dsuch at zato.io>
+Copyright (C) 2017 Dariusz Suchojad <dsuch at zato.io>
 
 Licensed under LGPLv3, see LICENSE.txt for terms and conditions.
 """
 
 from __future__ import absolute_import, division, print_function, unicode_literals
-
-try:
-    import pymysql
-    pymysql.install_as_MySQLdb()
-except ImportError:
-    pass
 
 # stdlib
 import os
@@ -24,7 +18,7 @@ from zato.common.util import encrypt
 
 config_template = """[bind]
 host=0.0.0.0
-port=31530
+port=47120
 
 [cluster]
 id={cluster_id}
@@ -53,70 +47,28 @@ use_tls=True
 tls_protocol=TLSv1
 tls_ciphers=EECDH+AES:EDH+AES:-SHA1:EECDH+RC4:EDH+RC4:RC4-SHA:EECDH+AES256:EDH+AES256:AES256-SHA:!aNULL:!eNULL:!EXP:!LOW:!MD5
 tls_client_certs=optional
-priv_key_location=zato-scheduler-priv-key.pem
-pub_key_location=zato-scheduler-pub-key.pem
-cert_location=zato-scheduler-cert.pem
-ca_certs_location=zato-scheduler-ca-certs.pem
+priv_key_location=zato-connector-wmq-priv-key.pem
+pub_key_location=zato-connector-wmq-pub-key.pem
+cert_location=zato-connector-wmq-cert.pem
+ca_certs_location=zato-connector-wmq-ca-certs.pem
 
 [api_users]
 user1={user1_password}
 """
 
-startup_jobs="""[zato.stats.process-raw-times]
-seconds=90
-service=zato.stats.process-raw-times
-extra=max_batch_size=99999
-
-[zato.stats.aggregate-by-minute]
-seconds=60
-service=zato.stats.aggregate-by-minute
-
-[zato.stats.aggregate-by-hour]
-minutes=10
-service=zato.stats.aggregate-by-hour
-
-[zato.stats.aggregate-by-day]
-minutes=60
-service=zato.stats.aggregate-by-day
-
-[zato.stats.aggregate-by-month]
-minutes=60
-service=zato.stats.aggregate-by-month
-
-[zato.stats.summary.create-summary-by-day]
-minutes=10
-service=zato.stats.summary.create-summary-by-day
-
-[zato.stats.summary.create-summary-by-week]
-minutes=10
-service=zato.stats.summary.create-summary-by-week
-
-[zato.stats.summary.create-summary-by-month]
-minutes=60
-service=zato.stats.summary.create-summary-by-month
-
-[zato.stats.summary.create-summary-by-year]
-minutes=60
-service=zato.stats.summary.create-summary-by-year
-
-[zato.outgoing.sql.auto-ping]
-minutes=3
-service=zato.outgoing.sql.auto-ping
-"""
-
 class Create(ZatoCommand):
-    """ Creates a new scheduler instance.
+    """ Creates a new WebSpshere MQ connector instance.
     """
     needs_empty_dir = True
     allow_empty_secrets = True
 
     opts = deepcopy(common_odb_opts)
 
-    opts.append({'name':'pub_key_path', 'help':"Path to scheduler's public key in PEM"})
-    opts.append({'name':'priv_key_path', 'help':"Path to scheduler's private key in PEM"})
-    opts.append({'name':'cert_path', 'help':"Path to scheduler's certificate in PEM"})
+    opts.append({'name':'pub_key_path', 'help':"Path to connector's public key in PEM"})
+    opts.append({'name':'priv_key_path', 'help':"Path to connector's private key in PEM"})
+    opts.append({'name':'cert_path', 'help':"Path to connector's certificate in PEM"})
     opts.append({'name':'ca_certs_path', 'help':"Path to a bundle of CA certificates to be trusted"})
-    opts.append({'name':'cluster_id', 'help':"ID of the cluster this scheduler will belong to"})
+    opts.append({'name':'cluster_id', 'help':"ID of the cluster this connector will belong to"})
 
     def __init__(self, args):
         self.target_dir = os.path.abspath(args.path)
@@ -126,15 +78,14 @@ class Create(ZatoCommand):
         os.chdir(self.target_dir)
 
         repo_dir = os.path.join(self.target_dir, 'config', 'repo')
-        conf_path = os.path.join(repo_dir, 'scheduler.conf')
-        startup_jobs_conf_path = os.path.join(repo_dir, 'startup_jobs.conf')
+        conf_path = os.path.join(repo_dir, 'connector-wmq.conf')
 
         os.mkdir(os.path.join(self.target_dir, 'logs'))
         os.mkdir(os.path.join(self.target_dir, 'config'))
         os.mkdir(repo_dir)
 
-        self.copy_scheduler_crypto(repo_dir, args)
-        priv_key = open(os.path.join(repo_dir, 'zato-scheduler-priv-key.pem')).read()
+        self.copy_connector_wmq_crypto(repo_dir, args)
+        priv_key = open(os.path.join(repo_dir, 'zato-connector-wmq-priv-key.pem')).read()
 
         config = {
             'odb_db_name': args.odb_db_name or args.sqlite_path,
@@ -151,17 +102,17 @@ class Create(ZatoCommand):
         }
 
         open(os.path.join(repo_dir, 'logging.conf'), 'w').write(
-            common_logging_conf_contents.format(log_path='./logs/scheduler.log'))
+            common_logging_conf_contents.format(log_path='./logs/connector-wmq.log'))
         open(conf_path, 'w').write(config_template.format(**config))
-        open(startup_jobs_conf_path, 'w').write(startup_jobs)
 
         # Initial info
-        self.store_initial_info(self.target_dir, self.COMPONENTS.SCHEDULER.code)
+        self.store_initial_info(self.target_dir, self.COMPONENTS.CONNECTOR_WMQ.code)
 
         if show_output:
             if self.verbose:
-                msg = """Successfully created a scheduler instance.
-    You can start it with the 'zato start {path}' command.""".format(path=os.path.abspath(os.path.join(os.getcwd(), self.target_dir)))
+                msg = """Successfully created a WebSpshere MQ instance.
+    You can start it with the 'zato start {path}' command.""".format(
+                path=os.path.abspath(os.path.join(os.getcwd(), self.target_dir)))
                 self.logger.debug(msg)
             else:
                 self.logger.info('OK')

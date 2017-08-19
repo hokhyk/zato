@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Copyright (C) 2010 Dariusz Suchojad <dsuch at zato.io>
+Copyright (C) 2017, Zato Source s.r.o. https://zato.io
 
 Licensed under LGPLv3, see LICENSE.txt for terms and conditions.
 """
@@ -23,9 +23,9 @@ from bunch import Bunch
 from cryptography.fernet import Fernet
 
 # Zato
-from zato.cli import common_odb_opts, kvdb_opts, ca_create_ca, ca_create_lb_agent, ca_create_scheduler, ca_create_server, \
-     ca_create_web_admin, create_cluster, create_lb, create_odb, create_scheduler, create_server, create_web_admin, \
-     ZatoCommand
+from zato.cli import common_odb_opts, kvdb_opts, ca_create_ca, ca_create_connector_wmq, ca_create_lb_agent, ca_create_scheduler, \
+     ca_create_server, ca_create_web_admin, create_cluster, create_connector_wmq, create_lb, create_odb, create_scheduler, \
+     create_server, create_web_admin, ZatoCommand
 from zato.common.defaults import http_plain_server_port
 from zato.common.markov_passwords import generate_password
 from zato.common.odb.model import Cluster
@@ -87,6 +87,12 @@ echo [3/$STEPS] Load-balancer started
 cd $BASE_DIR/scheduler
 $ZATO_BIN start .
 echo [5/$STEPS] Scheduler started
+
+# .. connectors ..
+cd $BASE_DIR/connector-wmq
+$ZATO_BIN start .
+echo [6/$STEPS] Connectors started
+
 """
 
 zato_qs_start_tail = """
@@ -123,6 +129,7 @@ then
   rm -f $BASE_DIR/server2/pidfile
   rm -f $BASE_DIR/web-admin/pidfile
   rm -f $BASE_DIR/scheduler/pidfile
+  rm -f $BASE_DIR/connector-wmq/pidfile
 
   echo PID files deleted
 fi
@@ -148,6 +155,10 @@ echo [$STEPS/$STEPS] Web admin stopped
 cd $BASE_DIR/scheduler
 $ZATO_BIN stop .
 echo [$STEPS/$STEPS] Scheduler stopped
+
+cd $BASE_DIR/connector-wmq
+$ZATO_BIN stop .
+echo [$STEPS/$STEPS] Connectors stopped
 
 cd $BASE_DIR
 echo Zato cluster $CLUSTER stopped
@@ -217,6 +228,7 @@ class Create(ZatoCommand):
         bunch.kvdb_password = args.kvdb_password
         bunch.cluster_name = cluster_name
         bunch.scheduler_name = 'scheduler1'
+        bunch.connector_wmq_name = 'connector-wmq1'
 
         return bunch
 
@@ -227,27 +239,17 @@ class Create(ZatoCommand):
         1) CA and crypto material
         2) ODB
         3) ODB initial data
-        4) servers
-        5) load-balancer
+        4) Servers
+        5) Load-balancer
         6) Web admin
         7) Scheduler
         8) Scripts
+        9) Connectors
         """
 
         if args.odb_type == 'sqlite':
             args.sqlite_path = os.path.abspath(os.path.join(args.path, 'zato.db'))
 
-        '''
-        cluster_id_args = Bunch()
-        cluster_id_args.odb_db_name = args.odb_db_name
-        cluster_id_args.odb_host = args.odb_host
-        cluster_id_args.odb_password = args.odb_password
-        cluster_id_args.odb_port = args.odb_port
-        cluster_id_args.odb_type = args.odb_type
-        cluster_id_args.odb_user = args.odb_user
-        cluster_id_args.postgresql_schema = args.postgresql_schema
-        cluster_id_args.sqlite_path = args.sqlite_path
-        '''
 
         next_step = count(1)
         next_port = count(http_plain_server_port)
@@ -258,7 +260,7 @@ class Create(ZatoCommand):
         for idx in range(1, servers+1):
             server_names['{}'.format(idx)] = 'server{}'.format(idx)
 
-        total_steps = 7 + servers
+        total_steps = 8 + servers
         admin_invoke_password = uuid4().hex
         broker_host = 'localhost'
         broker_port = 6379
@@ -288,6 +290,7 @@ class Create(ZatoCommand):
         ca_create_lb_agent.Create(ca_args).execute(ca_args, False)
         ca_create_web_admin.Create(ca_args).execute(ca_args, False)
         ca_create_scheduler.Create(ca_args).execute(ca_args, False)
+        ca_create_connector_wmq.Create(ca_args).execute(ca_args, False)
 
         server_crypto_loc = {}
 
@@ -300,6 +303,7 @@ class Create(ZatoCommand):
         lb_agent_crypto_loc = CryptoMaterialLocation(ca_path, 'lb-agent')
         web_admin_crypto_loc = CryptoMaterialLocation(ca_path, 'web-admin')
         scheduler_crypto_loc = CryptoMaterialLocation(ca_path, 'scheduler1')
+        connector_wmq_crypto_loc = CryptoMaterialLocation(ca_path, 'connector-wmq1')
 
         self.logger.info('[{}/{}] Certificate authority created'.format(next_step.next(), total_steps))
 
@@ -353,7 +357,7 @@ class Create(ZatoCommand):
 
             create_server.Create(create_server_args).execute(create_server_args, next_port.next(), False)
 
-            self.logger.info('[{}/{}] server{} created'.format(next_step.next(), total_steps, name))
+            self.logger.info('[{}/{}] Server #{} created'.format(next_step.next(), total_steps, name))
 
 # ################################################################################################################################
 
@@ -432,7 +436,36 @@ class Create(ZatoCommand):
 # ################################################################################################################################
 
         #
-        # 8) Scripts
+        # 8) Connectors (for now, only WMQ is a separate one)
+        #
+        connector_wmq_path = os.path.join(args_path, 'connector-wmq')
+        os.mkdir(connector_wmq_path)
+
+        session = get_session(get_engine(args))
+
+        with closing(session):
+            cluster_id = session.query(Cluster.id).\
+                    filter(Cluster.name==cluster_name).\
+                        one()[0]
+
+        create_connector_wmq_args = self._bunch_from_args(args, cluster_name)
+        create_connector_wmq_args.path = connector_wmq_path
+        create_connector_wmq_args.cert_path = connector_wmq_crypto_loc.cert_path
+        create_connector_wmq_args.pub_key_path = connector_wmq_crypto_loc.pub_path
+        create_connector_wmq_args.priv_key_path = connector_wmq_crypto_loc.priv_path
+        create_connector_wmq_args.ca_certs_path = connector_wmq_crypto_loc.ca_certs_path
+        create_connector_wmq_args.cluster_id = cluster_id
+
+        connector_wmq_password = generate_password()
+        create_connector_wmq.Create(
+            create_connector_wmq_args).execute(create_connector_wmq_args, False, connector_wmq_password, True)
+
+        self.logger.info('[{}/{}] Connectors created'.format(next_step.next(), total_steps))
+
+# ################################################################################################################################
+
+        #
+        # 9) Scripts
         #
         zato_bin = 'zato'
         zato_qs_start_path = os.path.join(args_path, 'zato-qs-start.sh')
@@ -451,8 +484,8 @@ class Create(ZatoCommand):
         sanity_checks = '\n'.join(sanity_checks)
         start_servers = '\n'.join(start_servers)
         stop_servers = '\n'.join(stop_servers)
-        start_steps = 4 + servers
-        stop_steps = 2 + servers
+        start_steps = 5 + servers
+        stop_steps = 3 + servers
 
         zato_qs_start_head = zato_qs_start_head_template.format(
             zato_bin=zato_bin, script_dir=script_dir, cluster_name=cluster_name, start_steps=start_steps)

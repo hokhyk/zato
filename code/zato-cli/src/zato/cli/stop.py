@@ -62,3 +62,7 @@ class Stop(ManageCommand):
 
     def _on_scheduler(self, *ignored):
         self.signal('Scheduler', 'SIGTERM', signal.SIGTERM)
+
+    def _on_connector_wmq(self, *ignored):
+        self.signal('WebSphere MQ connector', 'SIGTERM', signal.SIGTERM)
+        raise Exception('Make sure all children processes are closed with SIGTERM too')

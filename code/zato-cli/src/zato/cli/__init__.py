@@ -310,6 +310,7 @@ class ZatoCommand(object):
                 self.name = name
 
         CA = _ComponentName('CA', 'Certificate authority')
+        CONNECTOR_WMQ = _ComponentName('CONNECTOR_WMQ', 'WebSphere MQ connector')
         LOAD_BALANCER = _ComponentName('LOAD_BALANCER', 'Load balancer')
         SCHEDULER = _ComponentName('SCHEDULER', 'Scheduler')
         SERVER = _ComponentName('SERVER', 'Server')
@@ -519,6 +520,9 @@ class ZatoCommand(object):
     def copy_scheduler_crypto(self, repo_dir, args):
         self._copy_crypto(repo_dir, args, 'scheduler')
 
+    def copy_connector_wmq_crypto(self, repo_dir, args):
+        self._copy_crypto(repo_dir, args, 'connector-wmq')
+
     def copy_web_admin_crypto(self, repo_dir, args):
         for attr, name in (('pub_key_path', 'pub-key'), ('priv_key_path', 'priv-key'), ('cert_path', 'cert'), ('ca_certs_path', 'ca-certs')):
             file_name = os.path.join(repo_dir, 'web-admin-{}.pem'.format(name))
@@ -601,7 +605,7 @@ class CACreateCommand(ZatoCommand):
             'target_dir':self.target_dir
         }
 
-        for arg in('cluster_name', 'server_name', 'scheduler_name'):
+        for arg in('cluster_name', 'server_name', 'scheduler_name', 'connector_wmq_name'):
             if hasattr(args, arg):
                 file_args[arg] = getattr(args, arg)
 
@@ -687,6 +691,7 @@ class ManageCommand(ZatoCommand):
             self.COMPONENTS.SERVER.code: self._on_server,
             self.COMPONENTS.WEB_ADMIN.code: self._on_web_admin,
             self.COMPONENTS.SCHEDULER.code: self._on_scheduler,
+            self.COMPONENTS.CONNECTOR_WMQ.code: self._on_connector_wmq
         }
 
     command_files = set([ZATO_INFO_FILE])
@@ -694,7 +699,7 @@ class ManageCommand(ZatoCommand):
     def _on_lb(self, *ignored_args, **ignored_kwargs):
         raise NotImplementedError('Should be implemented by subclasses')
 
-    _on_web_admin = _on_server = _on_scheduler = _on_lb
+    _on_connector_wmq = _on_web_admin = _on_server = _on_scheduler = _on_lb
 
     def execute(self, args):
 

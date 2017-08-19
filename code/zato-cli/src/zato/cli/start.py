@@ -143,3 +143,11 @@ Examples:
         self.run_check_config()
         self.check_pidfile()
         self.start_component('zato.scheduler.main', 'web scheduler', '', self.delete_pidfile)
+
+    def _on_connector_wmq(self, *ignored):
+        #self.logger.info(
+        '''
+        self.run_check_config()
+        self.check_pidfile()
+        self.start_component('zato.connector.wmq', 'WebSphere MQ', '', self.delete_pidfile)
+        '''

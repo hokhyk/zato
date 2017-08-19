@@ -54,7 +54,7 @@ class CheckConfig(ManageCommand):
         if self.show_output:
             self.logger.info('SQL ODB connection OK')
 
-    def check_sql_odb_server_scheduler(self, cm, conf):
+    def check_sql_odb_server_common(self, cm, conf):
         engine_params = dict(conf['odb'].items())
         engine_params['extra'] = {}
         engine_params['pool_size'] = 1
@@ -126,7 +126,7 @@ class CheckConfig(ManageCommand):
     def _on_server(self, args):
         cm, conf = self.get_crypto_manager_conf('server.conf')
 
-        self.check_sql_odb_server_scheduler(cm, conf)
+        self.check_sql_odb_server_common(cm, conf)
         self.on_server_check_kvdb(cm, conf)
 
         if getattr(args, 'ensure_no_pidfile', False):
@@ -175,7 +175,12 @@ class CheckConfig(ManageCommand):
     def _on_scheduler(self, *ignored_args, **ignored_kwargs):
         cm, conf = self.get_crypto_manager_conf('scheduler.conf')
 
-        self.check_sql_odb_server_scheduler(cm, conf)
+        self.check_sql_odb_server_common(cm, conf)
         self.on_server_check_kvdb(cm, conf, 'broker')
 
+        self.ensure_no_pidfile()
+
+    def _on_connector_wmq(self, *ignored_args, **ignored_kwargs):
+        cm, conf = self.get_crypto_manager_conf('connector-wmq.conf')
+        self.check_sql_odb_server_common(cm, conf)
         self.ensure_no_pidfile()
