@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+
+"""
+Copyright (C) 2017 Dariusz Suchojad <dsuch at zato.io>
+
+Licensed under LGPLv3, see LICENSE.txt for terms and conditions.
+"""
+
 """
    Copyright 2006-2008 SpringSource (http://springsource.com), All Rights Reserved
 
@@ -17,8 +25,13 @@
 # stdlib
 import sys
 import logging
-from threading import RLock
-from cStringIO import StringIO
+from threading import currentThread, RLock
+
+try:
+    from cStringIO import StringIO
+except ImportError, e:
+    from StringIO import StringIO
+
 from struct import pack, unpack
 from xml.sax.saxutils import escape
 from binascii import hexlify, unhexlify
@@ -33,18 +46,13 @@ except ImportError:
     except ImportError:
         from elementtree import ElementTree as etree
 
-# Spring Python
-from springpython.context import DisposableObject
-from springpython.jms.core import reserved_attributes, TextMessage
-from springpython.util import TRACE1, synchronized
-from springpython.jms import JMSException, WebSphereMQJMSException, \
-     NoMessageAvailableException, DELIVERY_MODE_NON_PERSISTENT, \
-     DELIVERY_MODE_PERSISTENT
-
+# Zato
+from zato.connector_wmq._spring.core import reserved_attributes, TextMessage
+from zato.connector_wmq._spring import JMSException, WebSphereMQJMSException, NoMessageAvailableException, \
+     DELIVERY_MODE_NON_PERSISTENT, DELIVERY_MODE_PERSISTENT
 
 # Don't pollute the caller's namespace
 __all__ = ["WebSphereMQConnectionFactory"]
-
 
 # Internal constants, don't touch.
 
@@ -86,6 +94,31 @@ _mcd.append(_msgbody)
 # Clean up namespace.
 del(_msd, _msgbody)
 
+TRACE1 = 6
+logging.addLevelName(TRACE1, "TRACE1")
+
+class synchronized(object):
+    """ Class enapsulating a lock and a function allowing it to be used as
+    a synchronizing decorator making the wrapped function thread-safe """
+
+    def __init__(self, *args):
+        self.lock = RLock()
+        self.logger = logging.getLogger("zato.connector_wmq._spring.factory.synchronized")
+
+    def __call__(self, f):
+        def lockedfunc(*args, **kwargs):
+            try:
+                self.lock.acquire()
+                self.logger.log(TRACE1, "Acquired lock [%s] thread [%s]" % (self.lock, currentThread()))
+                try:
+                    return f(*args, **kwargs)
+                except Exception, e:
+                    raise
+            finally:
+                self.lock.release()
+                self.logger.log(TRACE1, "Released lock [%s] thread [%s]" % (self.lock, currentThread()))
+        return lockedfunc
+
 
 def unhexlify_wmq_id(wmq_id):
     """ Converts the WebSphere MQ generated identifier back to bytes,
@@ -94,7 +127,7 @@ def unhexlify_wmq_id(wmq_id):
     return unhexlify(wmq_id.replace(_WMQ_ID_PREFIX, "", 1))
 
 
-class WebSphereMQConnectionFactory(DisposableObject):
+class WebSphereMQConnectionFactory(object):
 
     def __init__(self, queue_manager=None, channel=None, host=None, listener_port=None,
                  cache_open_send_queues=True, cache_open_receive_queues=True,
@@ -120,7 +153,7 @@ class WebSphereMQConnectionFactory(DisposableObject):
         # Whether we expect to both send and receive JMS messages or not
         self.needs_jms = needs_jms
 
-        self.logger = logging.getLogger("springpython.jms.factory.WebSphereMQConnectionFactory")
+        self.logger = logging.getLogger("zato.connector_wmq._spring.factory.WebSphereMQConnectionFactory")
 
         from pymqi import CMQC
         import pymqi
@@ -141,7 +174,7 @@ class WebSphereMQConnectionFactory(DisposableObject):
         self.logger.log(TRACE1, "Finished __init__")
 
     @synchronized()
-    def destroy(self):
+    def close(self):
         if self._is_connected:
             self._disconnecting = True
             try:
@@ -208,12 +241,13 @@ class WebSphereMQConnectionFactory(DisposableObject):
             connect_options = self.CMQC.MQCNO_HANDLE_SHARE_NONE
 
         try:
-            self.mgr.connectWithOptions(self.queue_manager, cd=cd, opts=connect_options, sco=sco)
+            #self.mgr.connectWithOptions(self.queue_manager, cd=cd, opts=connect_options, sco=sco, user='mqm', password='mqm')
+            self.mgr.connect_tcp_client(self.queue_manager, cd, self.channel, conn_name, 'mqm', 'mqm')
         except self.mq.MQMIError, e:
             exc = WebSphereMQJMSException(e, e.comp, e.reason)
             raise exc
         except Exception, e:
-            self.logger.error("Could not connect to queue manager, e=[%s]" % e)
+            self.logger.error("Could not connect to queue manager, e:`%s`" % format_exc(e))
             exc = WebSphereMQJMSException(e, None, None)
             raise exc
         else:
@@ -368,6 +402,9 @@ class WebSphereMQConnectionFactory(DisposableObject):
                 exc = WebSphereMQJMSException(e, e.comp, e.reason)
                 raise exc
 
+    def ping(self):
+        self._connect()
+        self.mgr.ping()
 
     def open_dynamic_queue(self):
         if self._disconnecting:
@@ -671,7 +708,7 @@ class MQRFH2JMS(object):
         self.folders = {}
         self.payload = None
 
-        self.logger = logging.getLogger("springpython.jms.factory.MQRFH2JMS")
+        self.logger = logging.getLogger("zato.connector_wmq._spring.factory.MQRFH2JMS")
 
     def _pad_folder(self, folder):
         """ Pads the folder to a multiple of 4, as required by WebSphere MQ.

@@ -14,6 +14,7 @@ from bunch import Bunch
 # Zato
 from zato.common.embeddable import EmbeddableServer
 from zato.common.util import get_crypto_manager_from_server_config, get_odb_session_from_server_config
+from zato.connector_wmq._spring.factory import WebSphereMQConnectionFactory
 
 # ################################################################################################################################
 
@@ -48,7 +49,9 @@ class ConnectorWMQServer(EmbeddableServer):
         """ Configures all MQ connections
         """
         for item in self.config.odb.get_def_jms_wmq_list(self.cluster_id):
-            print(item)
+
+            factory = WebSphereMQConnectionFactory(str(item.queue_manager), str(item.channel), str(item.host), item.port)
+            factory.ping()
 
 # ################################################################################################################################
 
