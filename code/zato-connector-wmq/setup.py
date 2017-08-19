@@ -17,7 +17,7 @@ execfile(_version_py, _locals)
 version = _locals['version']
 
 setup(
-      name = 'zato-agent',
+      name = 'zato-connector-wmq',
       version = version,
 
       author = 'Zato Source s.r.o.',
