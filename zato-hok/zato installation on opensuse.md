@@ -1,3 +1,45 @@
+# launch zato-2.0.8 docker container:
+sudo docker run -it -p 22 -p 6379:6379 -p 8183:8183 -p 17010:17010 -p 17011:17011 -p 11223:11223 zato-2.0.8
+
+# way 1 using docker
+
+# way 2 on ubuntu:  https://zato.io/docs/admin/guide/install/ubuntu.html
+Installation steps
+Install helper programs
+ubuntu$ sudo apt-get install apt-transport-https
+ubuntu$ sudo apt-get install python-software-properties
+Install additional package on Ubuntu versions greater than 12.04 LTS
+ubuntu$ sudo apt-get install software-properties-common
+Add the package signing key
+ubuntu$ curl -s https://zato.io/repo/zato-0CBD7F72.pgp.asc | sudo apt-key add -
+Add Zato repo and update sources
+ubuntu$ sudo apt-add-repository https://zato.io/repo/stable/2.0/ubuntu
+ubuntu$ sudo apt-get update
+Install Zato
+ubuntu$ sudo apt-get install zato
+Confirm the installation:
+ubuntu$ sudo su - zato
+ubuntu$ zato --version
+Zato 2.0.8.rev-050c6697
+ubuntu$
+## create a zato quickstart kit:
+$ zato quickstart create ~/env/qs-1 sqlite localhost 6379 \
+  --kvdb_password '' --verbose
+
+[1/8] Certificate authority created
+[2/8] ODB schema created
+[3/8] ODB initial data created
+[4/8] server1 created
+[5/8] server2 created
+[6/8] Load-balancer created
+Superuser created successfully.
+[7/8] Web admin created
+[8/8] Management scripts created
+Quickstart cluster quickstart-962637 created
+Web admin user:[admin], password:[gunn-equi-moni-onio]
+Start the cluster by issuing the /opt/zato/env/qs-1/zato-qs-start.sh command
+Visit https://zato.io/support for more information and support options
+
 https://zato.io/docs/admin/guide/install/docker.html
 Zato 2.0.8 documentation   Installation under Docker
 https://en.opensuse.org/SDB:Docker#Use_Docker
