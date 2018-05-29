@@ -16,3 +16,5 @@ docker run zato-2.0.8 -i -l -d ......
 
 docker push
 
+
+docker compose up
