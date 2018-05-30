@@ -29,5 +29,6 @@ pidfile
 *.pyc
 *.pyo
 *.so
+zato-hok/*.kate-swp
 *.*~
 ~
