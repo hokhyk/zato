@@ -22,6 +22,8 @@ ubuntu$ sudo su - zato
 ubuntu$ zato --version
 Zato 2.0.8.rev-050c6697
 ubuntu$
+ubuntu$mkdir ~/env/qs-1 -p
+
 ## create a zato quickstart kit:
 $ zato quickstart create ~/env/qs-1 sqlite localhost 6379 \
   --kvdb_password '' --verbose
