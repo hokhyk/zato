@@ -17,7 +17,7 @@ ubuntu$ sudo apt-add-repository https://zato.io/repo/stable/2.0/ubuntu
 ubuntu$ sudo apt-get update
 Install Zato
 ubuntu$ sudo apt-get install zato
-ubuntu$ sudo apt-get install redis-server
+ubuntu$ sudo apt-get install redis-server m 
 Confirm the installation:
 ubuntu$ sudo su - zato
 ubuntu$ zato --version
@@ -26,7 +26,7 @@ ubuntu$
 ubuntu$mkdir ~/env/qs-1 -p
 
 ## create a zato quickstart kit:
-$ zato quickstart create ~/env/qs-1 sqlite localhost 6379 --kvdb_password '' --verbose
+$ zato quickstart create ~/env/qs-1 sqlite localhost 6379 --kvdb_password '' --verbose`3`1
 
 [1/8] Certificate authority created
 [2/8] ODB schema created
@@ -41,6 +41,11 @@ Quickstart cluster quickstart-962637 created
 Web admin user:[admin], password:[okaf-ihet-reno-ukia]
 Start the cluster by issuing the /opt/zato/env/qs-1/zato-qs-start.sh command
 Visit https://zato.io/support for more information and support options
+
+## initiate web-admin user and password
+zato$zato create user /opt/zato/env/qs-1/web-admin
+zato$zato update password /opt/zato/env/qs-1/web-admin zato(or anyother user created)
+
 
 https://zato.io/docs/admin/guide/install/docker.html
 Zato 2.0.8 documentation   Installation under Docker
